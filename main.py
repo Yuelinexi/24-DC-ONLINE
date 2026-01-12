@@ -10,60 +10,49 @@ from keep_alive import keep_alive
 
 init(autoreset=True)
 
+# ================= CONFIG =================
 status = "dnd"          # online / dnd / idle
-custom_status = ""      # custom status text
+custom_status = ""      # isi teks status custom
+GATEWAY = "wss://gateway.discord.gg/?v=9&encoding=json"
 
-# ================== TOKEN ==================
-usertoken = os.getenv("TOKEN")
-if not usertoken:
-    print(f"{Fore.WHITE}[{Fore.RED}-{Fore.WHITE}] TOKEN belum diset di Environment.")
+# ================= TOKEN =================
+TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    print(f"{Fore.RED}TOKEN belum diset di Environment!")
     sys.exit()
 
 headers = {
-    "Authorization": usertoken,
+    "Authorization": TOKEN,
     "Content-Type": "application/json"
 }
 
-validate = requests.get(
-    "https://canary.discordapp.com/api/v9/users/@me",
-    headers=headers
-)
-if validate.status_code != 200:
-    print(f"{Fore.WHITE}[{Fore.RED}-{Fore.WHITE}] Token INVALID.")
+# ================= VALIDATE =================
+r = requests.get("https://canary.discordapp.com/api/v9/users/@me", headers=headers)
+if r.status_code != 200:
+    print(f"{Fore.RED}TOKEN INVALID!")
     sys.exit()
 
-userinfo = validate.json()
-username = userinfo["username"]
-userid = userinfo["id"]
+user = r.json()
+username = user["username"]
+userid = user["id"]
 
-# ================== SAFE SEND ==================
-async def safe_send(ws, data):
-    payload = json.dumps(data)
-    if len(payload) > 900_000:
-        print("⚠ Payload terlalu besar, dilewati")
-        return
-    await ws.send(payload)
-
-# ================== HEARTBEAT ==================
-async def heartbeat_loop(ws, interval):
-    while True:
-        await asyncio.sleep(interval / 1000)
-        await safe_send(ws, {"op": 1, "d": None})
-
-# ================== GATEWAY ==================
-async def onliner(token, status):
+# ================= GATEWAY =================
+async def onliner():
     async with websockets.connect(
-        "wss://gateway.discord.gg/?v=9&encoding=json",
-        max_size=2**20
+        GATEWAY,
+        max_size=None,
+        max_queue=None,
+        ping_interval=None
     ) as ws:
 
-        hello = json.loads(await ws.recv())
-        heartbeat_interval = hello["d"]["heartbeat_interval"]
+        # HELLO
+        await ws.recv()
 
+        # IDENTIFY
         auth = {
             "op": 2,
             "d": {
-                "token": token,
+                "token": TOKEN,
                 "properties": {
                     "$os": "windows",
                     "$browser": "chrome",
@@ -76,6 +65,7 @@ async def onliner(token, status):
             }
         }
 
+        # CUSTOM STATUS
         cstatus = {
             "op": 3,
             "d": {
@@ -91,25 +81,27 @@ async def onliner(token, status):
             }
         }
 
-        await safe_send(ws, auth)
-        await safe_send(ws, cstatus)
+        await ws.send(json.dumps(auth))
+        await ws.send(json.dumps(cstatus))
 
-        asyncio.create_task(heartbeat_loop(ws, heartbeat_interval))
-        await asyncio.Future()  # stay connected
+        # DIAM, JANGAN KIRIM APA-APA LAGI
+        while True:
+            await asyncio.sleep(60)
 
-# ================== RUN ==================
-async def run_onliner():
+# ================= RUN =================
+async def main():
     os.system("cls" if platform.system() == "Windows" else "clear")
     print(
-        f"{Fore.WHITE}[{Fore.LIGHTGREEN_EX}+{Fore.WHITE}] "
-        f"Logged in as {Fore.LIGHTBLUE_EX}{username}{Fore.WHITE} ({userid})"
+        f"{Fore.GREEN}[+] Logged in as "
+        f"{Fore.CYAN}{username}{Fore.WHITE} ({userid})"
     )
+
     while True:
         try:
-            await onliner(usertoken, status)
+            await onliner()
         except Exception as e:
-            print("Reconnect:", e)
-            await asyncio.sleep(5)
+            print(f"{Fore.YELLOW}Reconnect: {e}")
+            await asyncio.sleep(10)
 
 keep_alive()
-asyncio.run(run_onliner())
+asyncio.run(main())
