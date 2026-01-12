@@ -14,7 +14,7 @@ load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-BOT_NAME = os.getenv("BOT_NAME", "Aira")
+BOT_NAME = os.getenv("BOT_NAME", "Angeline")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
