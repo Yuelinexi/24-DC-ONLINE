@@ -9,7 +9,7 @@ from google import genai
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-BOT_NAME = os.getenv("BOT_NAME", "Celise")
+BOT_NAME = os.getenv("BOT_NAME", "Shimi")
 
 # ================= GEMINI =================
 client = genai.Client(api_key=GEMINI_API_KEY)
