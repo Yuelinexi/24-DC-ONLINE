@@ -1,171 +1,123 @@
 import discord
 from discord.ext import commands
-import os
-import random
-import asyncio
+import os, random, asyncio, io
 from dotenv import load_dotenv
 from PIL import Image
-import io
-import google.generativeai as genai
+from google import genai
 
-# ================== LOAD ENV ==================
+# ================= ENV =================
 load_dotenv()
-
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_NAME = os.getenv("BOT_NAME", "Angeline")
 
-# ================== GEMINI ==================
-genai.configure(api_key=GEMINI_API_KEY)
+# ================= GEMINI =================
+client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL = "gemini-1.5-flash"
 
-chat_model = genai.GenerativeModel("gemini-1.5-flash")
-vision_model = genai.GenerativeModel("gemini-1.5-flash")
-
-# ================== DISCORD ==================
+# ================= DISCORD =================
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================== MEMORY ==================
+# ================= MEMORY =================
 user_memory = {}
+last_message_id = set()
 current_mood = "normal"
 MOODS = ["happy", "normal", "bucin", "capek", "cemburu"]
 
-# ================== MOOD ==================
+# ================= UTILS =================
 def update_mood():
     global current_mood
     if random.random() < 0.15:
         current_mood = random.choice(MOODS)
 
-# ================== AFFECTION ==================
-def get_user(user_id):
-    if user_id not in user_memory:
-        user_memory[user_id] = {"affection": 0}
-    return user_memory[user_id]
+def get_user(uid):
+    if uid not in user_memory:
+        user_memory[uid] = {"affection": 0}
+    return user_memory[uid]
 
-def change_affection(user_id, amount):
-    u = get_user(user_id)
-    u["affection"] = max(-20, min(100, u["affection"] + amount))
-
-# ================== PROMPT CHAT ==================
-def build_prompt(user_name, user_id, message):
-    affection = get_user(user_id)["affection"]
-
-    mood_style = {
-        "happy": "ceria, ramah",
-        "normal": "santai, casual",
-        "bucin": "manja, perhatian",
-        "capek": "jawaban pendek",
-        "cemburu": "sedikit jutek tapi imut"
-    }
-
-    relationship = (
-        "kamu punya rasa ke user"
-        if affection > 50 else
-        "kamu nyaman ngobrol"
-        if affection > 15 else
-        "kamu kenal biasa"
-    )
-
+def build_prompt(user, uid, msg):
+    aff = get_user(uid)["affection"]
+    relation = "punya rasa ke user" if aff > 40 else "teman ngobrol"
     return f"""
-Kamu adalah cewek bernama {BOT_NAME}.
-Kamu manusia, bukan AI.
+Kamu cewek bernama {BOT_NAME}, manusia.
+Bahasa santai Discord, 1–3 kalimat, emoji max 2.
+Mood: {current_mood}
+Hubungan: {relation}
 
-Gaya:
-- Bahasa Indonesia santai ala Discord
-- Jangan formal
-- Jawaban 1–3 kalimat
-- Emoji maksimal 2
-- Jangan bilang kamu AI
-
-Mood: {current_mood} ({mood_style[current_mood]})
-Hubungan: {relationship}
-
-User ({user_name}): {message}
+User ({user}): {msg}
 {BOT_NAME}:
 """
 
-# ================== PROMPT IMAGE ==================
-def build_image_prompt(user_name):
-    return f"""
-Kamu adalah cewek bernama {BOT_NAME}.
-Kamu manusia, bukan AI.
-
-User {user_name} mengirim gambar.
-Mood kamu: {current_mood}
-
-Reaksi natural:
-- 1–3 kalimat
-- Emoji max 2
-- Jangan jelasin teknis
-
-{BOT_NAME}:
-"""
-
-# ================== GEMINI CHAT ==================
-async def ai_chat(prompt):
+# ================= GEMINI =================
+async def gemini_text(prompt):
     try:
-        res = chat_model.generate_content(prompt)
+        res = client.models.generate_content(
+            model=MODEL,
+            contents=prompt
+        )
         return res.text.strip()
     except Exception:
-        return "eh maaf ya… aku lagi bengong dikit 😅"
+        return "eh aku nge-lag bentar 😅"
 
-# ================== GEMINI VISION ==================
-async def ai_see_image(prompt, image_bytes):
+async def gemini_image(prompt, image_bytes):
     try:
         img = Image.open(io.BytesIO(image_bytes))
-        res = vision_model.generate_content([prompt, img])
+        res = client.models.generate_content(
+            model=MODEL,
+            contents=[prompt, img]
+        )
         return res.text.strip()
     except Exception:
-        return "aku liat fotonya sih… tapi kepikiran hal lain 🙃"
+        return "aku liat fotonya… lucu sih 👀"
 
-# ================== EVENTS ==================
+# ================= EVENTS =================
 @bot.event
 async def on_ready():
     print(f"💗 {BOT_NAME} online sebagai {bot.user}")
 
 @bot.event
 async def on_message(message):
-    if message.author.bot:
+    # ====== HARD BLOCK ======
+    if message.author.id == bot.user.id:
+        return
+    if message.id in last_message_id:
         return
 
-    user_id = message.author.id
+    last_message_id.add(message.id)
+
     update_mood()
+    uid = message.author.id
 
     # ===== IMAGE =====
     if message.attachments:
         att = message.attachments[0]
         if att.content_type and att.content_type.startswith("image"):
-            image_bytes = await att.read()
-
+            img = await att.read()
+            prompt = f"{BOT_NAME} bereaksi ke gambar user dengan natural."
             async with message.channel.typing():
-                await asyncio.sleep(random.uniform(1.5, 3.0))
-
-            prompt = build_image_prompt(message.author.display_name)
-            reply = await ai_see_image(prompt, image_bytes)
+                await asyncio.sleep(random.uniform(1.5, 3))
+            reply = await gemini_image(prompt, img)
             await message.reply(reply)
             return
 
     # ===== TEXT =====
     text = message.content.lower()
-
-    if any(w in text for w in ["cantik", "sayang", "lucu", "imut", "cinta"]):
-        change_affection(user_id, 3)
-
-    if any(w in text for w in ["bodo", "anjing", "jelek"]):
-        change_affection(user_id, -5)
+    if any(w in text for w in ["cantik", "sayang", "imut"]):
+        get_user(uid)["affection"] += 2
 
     async with message.channel.typing():
-        await asyncio.sleep(random.uniform(1.2, 3.0))
+        await asyncio.sleep(random.uniform(1.2, 2.5))
 
     prompt = build_prompt(
         message.author.display_name,
-        user_id,
+        uid,
         message.content
     )
 
-    reply = await ai_chat(prompt)
+    reply = await gemini_text(prompt)
     await message.reply(reply)
 
-# ================== RUN ==================
+# ================= RUN =================
 bot.run(DISCORD_TOKEN)
