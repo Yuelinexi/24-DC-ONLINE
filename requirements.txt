@@ -1,5 +1,5 @@
-Flask
+discord.py
+openai
+python-dotenv
+pillow
 requests
-colorama
-websockets
-websocket-client
