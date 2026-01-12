@@ -10,82 +10,98 @@ from keep_alive import keep_alive
 
 init(autoreset=True)
 
-status = "dnd"  # online/dnd/idle
-custom_status = ""  # Custom Status
+# ================= CONFIG =================
+status = "dnd"          # online / dnd / idle
+custom_status = ""      # isi teks status custom
+GATEWAY = "wss://gateway.discord.gg/?v=9&encoding=json"
 
-usertoken = os.getenv("TOKEN")
-if not usertoken:
-    print(f"{Fore.WHITE}[{Fore.RED}-{Fore.WHITE}] Please add a token inside Secrets.")
+# ================= TOKEN =================
+TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    print(f"{Fore.RED}TOKEN belum diset di Environment!")
     sys.exit()
 
-headers = {"Authorization": usertoken, "Content-Type": "application/json"}
+headers = {
+    "Authorization": TOKEN,
+    "Content-Type": "application/json"
+}
 
-validate = requests.get("https://canary.discordapp.com/api/v9/users/@me", headers=headers)
-if validate.status_code != 200:
-    print(f"{Fore.WHITE}[{Fore.RED}-{Fore.WHITE}] Your token might be invalid. Please check it again.")
+# ================= VALIDATE =================
+r = requests.get("https://canary.discordapp.com/api/v9/users/@me", headers=headers)
+if r.status_code != 200:
+    print(f"{Fore.RED}TOKEN INVALID!")
     sys.exit()
 
-userinfo = requests.get("https://canary.discordapp.com/api/v9/users/@me", headers=headers).json()
-username = userinfo["username"]
-discriminator = userinfo["discriminator"]
-userid = userinfo["id"]
+user = r.json()
+username = user["username"]
+userid = user["id"]
 
-async def onliner(token, status):
-    async with websockets.connect("wss://gateway.discord.gg/?v=9&encoding=json") as ws:
-        start = json.loads(await ws.recv())
-        heartbeat = start["d"]["heartbeat_interval"]
+# ================= GATEWAY =================
+async def onliner():
+    async with websockets.connect(
+        GATEWAY,
+        max_size=None,
+        max_queue=None,
+        ping_interval=None
+    ) as ws:
 
+        # HELLO
+        await ws.recv()
+
+        # IDENTIFY
         auth = {
             "op": 2,
             "d": {
-                "token": token,
+                "token": TOKEN,
                 "properties": {
-                    "$os": "Windows 10",
-                    "$browser": "Google Chrome",
-                    "$device": "Windows",
+                    "$os": "windows",
+                    "$browser": "chrome",
+                    "$device": "pc"
                 },
-                "presence": {"status": status, "afk": False},
-            },
+                "presence": {
+                    "status": status,
+                    "afk": False
+                }
+            }
         }
-        await ws.send(json.dumps(auth))
 
+        # CUSTOM STATUS
         cstatus = {
             "op": 3,
             "d": {
                 "since": 0,
-                "activities": [
-                    {
-                        "type": 4,
-                        "state": custom_status,
-                        "name": "Custom Status",
-                        "id": "custom",
-                                #Uncomment the below lines if you want an emoji in the status
-                                #"emoji": {
-                                    #"name": "emoji name",
-                                    #"id": "emoji id",
-                                    #"animated": False,
-                                #},
-                            }
-                        ],
+                "activities": [{
+                    "type": 4,
+                    "state": custom_status,
+                    "name": "Custom Status",
+                    "id": "custom"
+                }],
                 "status": status,
-                "afk": False,
-            },
+                "afk": False
+            }
         }
+
+        await ws.send(json.dumps(auth))
         await ws.send(json.dumps(cstatus))
 
-        online = {"op": 1, "d": "None"}
-        await asyncio.sleep(heartbeat / 1000)
-        await ws.send(json.dumps(online))
+        # DIAM, JANGAN KIRIM APA-APA LAGI
+        while True:
+            await asyncio.sleep(60)
 
-async def run_onliner():
-    if platform.system() == "Windows":
-        os.system("cls")
-    else:
-        os.system("clear")
-    print(f"{Fore.WHITE}[{Fore.LIGHTGREEN_EX}+{Fore.WHITE}] Logged in as {Fore.LIGHTBLUE_EX}{username} {Fore.WHITE}({userid})!")
+# ================= RUN =================
+async def main():
+    os.system("cls" if platform.system() == "Windows" else "clear")
+    print(
+        f"{Fore.GREEN}[+] Logged in as "
+        f"{Fore.CYAN}{username}{Fore.WHITE} ({userid})"
+    )
+
     while True:
-        await onliner(usertoken, status)
-        await asyncio.sleep(50)
+        try:
+            await onliner()
+        except Exception as e:
+            print(f"{Fore.YELLOW}Reconnect: {e}")
+            await asyncio.sleep(10)
 
 keep_alive()
-asyncio.run(run_onliner())
+asyncio.run(main())
