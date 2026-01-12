@@ -190,7 +190,7 @@ async def gemini_image(prompt: str, image_bytes: bytes):
 async def on_ready():
     # === CUSTOM STATUS ===
     activity = discord.CustomActivity(
-        name="hmph, i'm not a minor 🍥"
+        name="hmph, i'm not minor 🍥"
     )
     await bot.change_presence(
         status=discord.Status.online,
