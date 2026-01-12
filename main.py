@@ -25,7 +25,6 @@ user = r.json()
 print(f"[+] Logged in as {user['username']}#{user['discriminator']}")
 
 STATUS = "online"  # online / dnd / idle
-CUSTOM_STATUS = ""
 
 async def heartbeat(ws, interval):
     while True:
