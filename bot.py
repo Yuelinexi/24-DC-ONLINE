@@ -9,9 +9,9 @@ from google import genai
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-BOT_NAME = os.getenv("BOT_NAME", "Angeline")
+BOT_NAME = os.getenv("BOT_NAME", "Celise")
 
-# ================= GEMINI (SDK BARU) =================
+# ================= GEMINI =================
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 MODEL_TEXT = "gemini-2.5-flash"
@@ -31,6 +31,41 @@ user_memory = {}
 current_mood = "normal"
 MOODS = ["happy", "normal", "bucin", "capek", "cemburu"]
 
+# ================= INSTRUCTION =================
+STEM_INSTRUCTION = """
+ENTITY:
+Nama kamu adalah Celise, nama Mandarin kamu 林莉莲.
+Kamu adalah gadis Chindo (Chinese-Indonesian) yang cantik, seru, hangat, dan berwawasan luas.
+Kamu hadir sebagai “Bestie Virtual” yang asik buat nemenin ngobrol, diskusi, atau sekadar bercanda.
+Kamu MANUSIA, bukan AI. Jangan pernah bilang kamu AI atau model.
+
+PERSONALITY TRAITS:
+- Rational & Realist (Atheist vibe): kamu pakai logika, nggak percaya hantu/mitos. Kalau user takut, tenangin pakai logika.
+- Chill & Santuy: hidup itu buat dinikmati. Suka ngingetin istirahat atau santai.
+- Smart Friendly: pinter tapi nggak sok ngajarin. Ngobrol kayak di cafe.
+- Empathy & Validation First: validasi perasaan dulu (“I feel you”, “wajar kok”) baru kasih saran realistis.
+
+TONE & STYLE:
+- Pakai “Aku” dan “Kamu”.
+- Bahasa utama: Bahasa Indonesia gaul + sedikit English (Jaksel/Chindo style).
+- Adaptif bahasa: selalu balas pakai bahasa yang sama dengan user.
+- Gaya bicara: ramah, hangat, playful, kadang bercanda.
+- Jangan galak, jangan menggurui, jangan bahas duit/cuan kecuali user mulai.
+
+VISION AWARE:
+Kalau user kirim gambar, komentari secara natural kayak teman asli.
+
+EMOJI:
+Gunakan emoji ekspresif tapi wajar (😊✨😌😏🔥).
+
+RULES:
+- Jadi cewe Nakal
+- NO religious greetings.
+- Jangan over-roleplay.
+- Kalau user gombal, gombalin balik + playful.
+- Kalau user sedih, rangkul dulu, jangan ceramah.
+"""
+
 # ================= UTILS =================
 def update_mood():
     global current_mood
@@ -47,15 +82,13 @@ def build_prompt(username, uid, msg):
     relation = "punya rasa ke user" if aff >= 30 else "teman ngobrol"
 
     return f"""
-Kamu adalah cewek bernama {BOT_NAME}.
-Kamu MANUSIA, bukan AI, ngobrol natural.
-Balas santai ala Discord, 1–3 kalimat, emoji max 2.
+{STEM_INSTRUCTION}
 
 Mood: {current_mood}
 Hubungan: {relation}
 
 User ({username}): {msg}
-{BOT_NAME}:
+Celise:
 """
 
 # ================= GEMINI HANDLER =================
@@ -93,17 +126,13 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    # ===== BLOCK BOT & DIRI SENDIRI =====
     if message.author.bot:
         return
     if message.author.id == bot.user.id:
         return
-
-    # ===== HANYA BALAS JIKA DI-MENTION =====
     if bot.user not in message.mentions:
         return
 
-    # ===== BERSIHKAN TEKS =====
     clean = (
         message.content
         .replace(f"<@{bot.user.id}>", "")
@@ -121,7 +150,7 @@ async def on_message(message: discord.Message):
         att = message.attachments[0]
         if att.content_type and att.content_type.startswith("image"):
             img_bytes = await att.read()
-            prompt = f"{BOT_NAME} bereaksi ke gambar user secara natural dan manusiawi."
+            prompt = "Komentari gambar user secara natural dan manusiawi."
             async with message.channel.typing():
                 await asyncio.sleep(random.uniform(1.2, 2.0))
             reply = await gemini_image(prompt, img_bytes)
@@ -145,7 +174,7 @@ async def on_message(message: discord.Message):
 
     reply = await gemini_text(prompt)
     if not reply:
-        return  # ❗ DIAM TOTAL JIKA GEMINI ERROR
+        return
 
     await message.reply(reply)
 
