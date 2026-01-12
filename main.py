@@ -1,107 +1,83 @@
 import os
-import sys
 import json
 import asyncio
-import platform
 import requests
 import websockets
-from colorama import init, Fore
 from keep_alive import keep_alive
 
-init(autoreset=True)
-
-# ================= CONFIG =================
-status = "dnd"          # online / dnd / idle
-custom_status = ""      # isi teks status custom
-GATEWAY = "wss://gateway.discord.gg/?v=9&encoding=json"
-
-# ================= TOKEN =================
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    print(f"{Fore.RED}TOKEN belum diset di Environment!")
-    sys.exit()
+    print("TOKEN kosong")
+    exit()
 
 headers = {
     "Authorization": TOKEN,
     "Content-Type": "application/json"
 }
 
-# ================= VALIDATE =================
-r = requests.get("https://canary.discordapp.com/api/v9/users/@me", headers=headers)
+# VALIDASI TOKEN
+r = requests.get("https://discord.com/api/v9/users/@me", headers=headers)
 if r.status_code != 200:
-    print(f"{Fore.RED}TOKEN INVALID!")
-    sys.exit()
+    print("TOKEN INVALID")
+    exit()
 
 user = r.json()
-username = user["username"]
-userid = user["id"]
+print(f"[+] Logged in as {user['username']}#{user['discriminator']}")
 
-# ================= GATEWAY =================
-async def onliner():
+STATUS = "online"  # online / dnd / idle
+CUSTOM_STATUS = "online 24/7"
+
+async def heartbeat(ws, interval):
+    while True:
+        await asyncio.sleep(interval)
+        await ws.send(json.dumps({"op": 1, "d": None}))
+
+async def connect():
     async with websockets.connect(
-        GATEWAY,
-        max_size=None,
-        max_queue=None,
-        ping_interval=None
+        "wss://gateway.discord.gg/?v=9&encoding=json",
+        max_size=2**20
     ) as ws:
 
-        # HELLO
-        await ws.recv()
+        hello = json.loads(await ws.recv())
+        interval = hello["d"]["heartbeat_interval"] / 1000
 
-        # IDENTIFY
-        auth = {
+        identify = {
             "op": 2,
             "d": {
                 "token": TOKEN,
+                "intents": 0,
                 "properties": {
-                    "$os": "windows",
+                    "$os": "linux",
                     "$browser": "chrome",
                     "$device": "pc"
                 },
                 "presence": {
-                    "status": status,
+                    "status": STATUS,
+                    "since": 0,
+                    "activities": [{
+                        "name": "Custom Status",
+                        "type": 4,
+                        "state": CUSTOM_STATUS
+                    }],
                     "afk": False
                 }
             }
         }
 
-        # CUSTOM STATUS
-        cstatus = {
-            "op": 3,
-            "d": {
-                "since": 0,
-                "activities": [{
-                    "type": 4,
-                    "state": custom_status,
-                    "name": "Custom Status",
-                    "id": "custom"
-                }],
-                "status": status,
-                "afk": False
-            }
-        }
+        await ws.send(json.dumps(identify))
 
-        await ws.send(json.dumps(auth))
-        await ws.send(json.dumps(cstatus))
+        asyncio.create_task(heartbeat(ws, interval))
 
-        # DIAM, JANGAN KIRIM APA-APA LAGI
         while True:
-            await asyncio.sleep(60)
+            await ws.recv()  # keep connection alive
 
-# ================= RUN =================
 async def main():
-    os.system("cls" if platform.system() == "Windows" else "clear")
-    print(
-        f"{Fore.GREEN}[+] Logged in as "
-        f"{Fore.CYAN}{username}{Fore.WHITE} ({userid})"
-    )
-
     while True:
         try:
-            await onliner()
+            await connect()
         except Exception as e:
-            print(f"{Fore.YELLOW}Reconnect: {e}")
-            await asyncio.sleep(10)
+            print("Reconnect:", e)
+            await asyncio.sleep(5)
 
 keep_alive()
 asyncio.run(main())
