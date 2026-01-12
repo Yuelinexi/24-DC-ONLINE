@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from PIL import Image
 from google import genai
 
-# ================= ENV =================
+# ================= LOAD ENV =================
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -20,9 +20,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================= MEMORY =================
+# ================= STATE =================
 user_memory = {}
-last_message_id = set()
 current_mood = "normal"
 MOODS = ["happy", "normal", "bucin", "capek", "cemburu"]
 
@@ -37,29 +36,33 @@ def get_user(uid):
         user_memory[uid] = {"affection": 0}
     return user_memory[uid]
 
-def build_prompt(user, uid, msg):
+def build_prompt(username, uid, msg):
     aff = get_user(uid)["affection"]
     relation = "punya rasa ke user" if aff > 40 else "teman ngobrol"
+
     return f"""
 Kamu cewek bernama {BOT_NAME}, manusia.
-Bahasa santai Discord, 1–3 kalimat, emoji max 2.
+Gaya chat Discord, santai, 1–3 kalimat, emoji max 2.
 Mood: {current_mood}
 Hubungan: {relation}
 
-User ({user}): {msg}
+User ({username}): {msg}
 {BOT_NAME}:
 """
 
-# ================= GEMINI =================
+# ================= GEMINI HANDLER =================
 async def gemini_text(prompt):
     try:
         res = client.models.generate_content(
             model=MODEL,
             contents=prompt
         )
+        if not res.text:
+            return None
         return res.text.strip()
-    except Exception:
-        return "eh aku nge-lag bentar 😅"
+    except Exception as e:
+        print("Gemini error:", e)
+        return None
 
 async def gemini_image(prompt, image_bytes):
     try:
@@ -68,9 +71,12 @@ async def gemini_image(prompt, image_bytes):
             model=MODEL,
             contents=[prompt, img]
         )
+        if not res.text:
+            return None
         return res.text.strip()
-    except Exception:
-        return "aku liat fotonya… lucu sih 👀"
+    except Exception as e:
+        print("Gemini image error:", e)
+        return None
 
 # ================= EVENTS =================
 @bot.event
@@ -79,13 +85,18 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # ====== HARD BLOCK ======
+    # ===== HARD BLOCK =====
     if message.author.id == bot.user.id:
         return
-    if message.id in last_message_id:
+
+    # ===== HANYA JAWAB MENTION =====
+    if bot.user not in message.mentions:
         return
 
-    last_message_id.add(message.id)
+    # ===== BERSIHKAN MENTION =====
+    clean = message.content.replace(f"<@{bot.user.id}>", "").strip()
+    if not clean:
+        return
 
     update_mood()
     uid = message.author.id
@@ -97,26 +108,30 @@ async def on_message(message):
             img = await att.read()
             prompt = f"{BOT_NAME} bereaksi ke gambar user dengan natural."
             async with message.channel.typing():
-                await asyncio.sleep(random.uniform(1.5, 3))
+                await asyncio.sleep(random.uniform(1.5, 2.5))
             reply = await gemini_image(prompt, img)
-            await message.reply(reply)
+            if reply:
+                await message.reply(reply)
             return
 
     # ===== TEXT =====
-    text = message.content.lower()
-    if any(w in text for w in ["cantik", "sayang", "imut"]):
+    text_lower = clean.lower()
+    if any(w in text_lower for w in ["cantik", "sayang", "imut"]):
         get_user(uid)["affection"] += 2
 
     async with message.channel.typing():
-        await asyncio.sleep(random.uniform(1.2, 2.5))
+        await asyncio.sleep(random.uniform(1.2, 2.2))
 
     prompt = build_prompt(
         message.author.display_name,
         uid,
-        message.content
+        clean
     )
 
     reply = await gemini_text(prompt)
+    if not reply:
+        return  # DIAM TOTAL JIKA ERROR
+
     await message.reply(reply)
 
 # ================= RUN =================
