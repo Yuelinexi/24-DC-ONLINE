@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from PIL import Image
 from google import genai
 
-# ================= LOAD ENV =================
+# ================= ENV =================
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -13,7 +13,7 @@ BOT_NAME = os.getenv("BOT_NAME", "Angeline")
 
 # ================= GEMINI =================
 client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL = "gemini-1.5-flash"
+MODEL = "models/gemini-1.0-pro"  # VALID & STABIL
 
 # ================= DISCORD =================
 intents = discord.Intents.default()
@@ -41,16 +41,16 @@ def build_prompt(username, uid, msg):
     relation = "punya rasa ke user" if aff > 40 else "teman ngobrol"
 
     return f"""
-Kamu cewek bernama {BOT_NAME}, manusia.
-Gaya chat Discord, santai, 1–3 kalimat, emoji max 2.
-Mood: {current_mood}
-Hubungan: {relation}
+Kamu adalah cewek bernama {BOT_NAME}, manusia (bukan AI).
+Gaya chat Discord, santai, natural, 1–3 kalimat, emoji max 2.
+Mood sekarang: {current_mood}
+Hubungan dengan user: {relation}
 
 User ({username}): {msg}
 {BOT_NAME}:
 """
 
-# ================= GEMINI HANDLER =================
+# ================= GEMINI =================
 async def gemini_text(prompt):
     try:
         res = client.models.generate_content(
@@ -62,7 +62,7 @@ async def gemini_text(prompt):
         return res.text.strip()
     except Exception as e:
         print("Gemini error:", e)
-        return None
+        return None  # PENTING: JANGAN BALAS APA-APA
 
 async def gemini_image(prompt, image_bytes):
     try:
@@ -85,16 +85,21 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # ===== HARD BLOCK =====
+    # ===== BLOCK TOTAL =====
     if message.author.id == bot.user.id:
         return
 
-    # ===== HANYA JAWAB MENTION =====
+    # ===== HANYA JAWAB JIKA DI-MENTION =====
     if bot.user not in message.mentions:
         return
 
     # ===== BERSIHKAN MENTION =====
-    clean = message.content.replace(f"<@{bot.user.id}>", "").strip()
+    clean = (
+        message.content
+        .replace(f"<@{bot.user.id}>", "")
+        .replace(f"<@!{bot.user.id}>", "")
+        .strip()
+    )
     if not clean:
         return
 
@@ -106,7 +111,7 @@ async def on_message(message):
         att = message.attachments[0]
         if att.content_type and att.content_type.startswith("image"):
             img = await att.read()
-            prompt = f"{BOT_NAME} bereaksi ke gambar user dengan natural."
+            prompt = f"{BOT_NAME} bereaksi ke gambar user dengan gaya cewek natural."
             async with message.channel.typing():
                 await asyncio.sleep(random.uniform(1.5, 2.5))
             reply = await gemini_image(prompt, img)
@@ -116,7 +121,7 @@ async def on_message(message):
 
     # ===== TEXT =====
     text_lower = clean.lower()
-    if any(w in text_lower for w in ["cantik", "sayang", "imut"]):
+    if any(w in text_lower for w in ["cantik", "sayang", "imut", "lucu"]):
         get_user(uid)["affection"] += 2
 
     async with message.channel.typing():
@@ -130,7 +135,7 @@ async def on_message(message):
 
     reply = await gemini_text(prompt)
     if not reply:
-        return  # DIAM TOTAL JIKA ERROR
+        return  # DIAM TOTAL JIKA GEMINI ERROR
 
     await message.reply(reply)
 
