@@ -4,21 +4,24 @@ import os
 import random
 import asyncio
 from dotenv import load_dotenv
-from openai import OpenAI
 from PIL import Image
 import io
-import base64
+import google.generativeai as genai
 
 # ================== LOAD ENV ==================
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BOT_NAME = os.getenv("BOT_NAME", "Angeline")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# ================== GEMINI ==================
+genai.configure(api_key=GEMINI_API_KEY)
 
-# ================== DISCORD SETUP ==================
+chat_model = genai.GenerativeModel("gemini-1.5-flash")
+vision_model = genai.GenerativeModel("gemini-1.5-flash")
+
+# ================== DISCORD ==================
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -26,10 +29,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ================== MEMORY ==================
 user_memory = {}
 current_mood = "normal"
-
 MOODS = ["happy", "normal", "bucin", "capek", "cemburu"]
 
-# ================== MOOD SYSTEM ==================
+# ================== MOOD ==================
 def update_mood():
     global current_mood
     if random.random() < 0.15:
@@ -38,36 +40,29 @@ def update_mood():
 # ================== AFFECTION ==================
 def get_user(user_id):
     if user_id not in user_memory:
-        user_memory[user_id] = {
-            "affection": 0
-        }
+        user_memory[user_id] = {"affection": 0}
     return user_memory[user_id]
 
 def change_affection(user_id, amount):
-    user = get_user(user_id)
-    user["affection"] += amount
-    user["affection"] = max(-20, min(100, user["affection"]))
-
-# ================== IMAGE ==================
-def image_to_base64(image_bytes):
-    return base64.b64encode(image_bytes).decode("utf-8")
+    u = get_user(user_id)
+    u["affection"] = max(-20, min(100, u["affection"] + amount))
 
 # ================== PROMPT CHAT ==================
 def build_prompt(user_name, user_id, message):
     affection = get_user(user_id)["affection"]
 
     mood_style = {
-        "happy": "ceria, ramah, gampang ketawa",
+        "happy": "ceria, ramah",
         "normal": "santai, casual",
-        "bucin": "manja, perhatian, sedikit posesif",
-        "capek": "jawaban pendek, agak males",
-        "cemburu": "nyindir halus tapi imut"
+        "bucin": "manja, perhatian",
+        "capek": "jawaban pendek",
+        "cemburu": "sedikit jutek tapi imut"
     }
 
     relationship = (
         "kamu punya rasa ke user"
         if affection > 50 else
-        "kamu nyaman dan perhatian"
+        "kamu nyaman ngobrol"
         if affection > 15 else
         "kamu kenal biasa"
     )
@@ -76,15 +71,15 @@ def build_prompt(user_name, user_id, message):
 Kamu adalah cewek bernama {BOT_NAME}.
 Kamu manusia, bukan AI.
 
-Aturan:
+Gaya:
 - Bahasa Indonesia santai ala Discord
 - Jangan formal
 - Jawaban 1–3 kalimat
 - Emoji maksimal 2
-- Jangan menyebut kamu AI
+- Jangan bilang kamu AI
 
-Mood kamu: {current_mood} ({mood_style[current_mood]})
-Hubungan kamu dengan user: {relationship}
+Mood: {current_mood} ({mood_style[current_mood]})
+Hubungan: {relationship}
 
 User ({user_name}): {message}
 {BOT_NAME}:
@@ -92,65 +87,37 @@ User ({user_name}): {message}
 
 # ================== PROMPT IMAGE ==================
 def build_image_prompt(user_name):
-    mood_style = {
-        "happy": "antusias",
-        "normal": "santai",
-        "bucin": "manja dan perhatian",
-        "capek": "pendek dan kalem",
-        "cemburu": "sedikit jutek"
-    }
-
     return f"""
 Kamu adalah cewek bernama {BOT_NAME}.
 Kamu manusia, bukan AI.
 
 User {user_name} mengirim gambar.
-Mood kamu: {current_mood} ({mood_style[current_mood]})
+Mood kamu: {current_mood}
 
-Aturan:
-- Reaksi natural seperti lihat foto
-- Jangan jelasin teknis
+Reaksi natural:
 - 1–3 kalimat
 - Emoji max 2
+- Jangan jelasin teknis
 
 {BOT_NAME}:
 """
 
-# ================== OPENAI CHAT ==================
+# ================== GEMINI CHAT ==================
 async def ai_chat(prompt):
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.9,
-        max_tokens=100
-    )
-    return res.choices[0].message.content.strip()
+    try:
+        res = chat_model.generate_content(prompt)
+        return res.text.strip()
+    except Exception:
+        return "eh maaf ya… aku lagi bengong dikit 😅"
 
-# ================== OPENAI VISION ==================
+# ================== GEMINI VISION ==================
 async def ai_see_image(prompt, image_bytes):
-    img_b64 = image_to_base64(image_bytes)
-
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{img_b64}"
-                        }
-                    }
-                ]
-            }
-        ],
-        temperature=0.8,
-        max_tokens=120
-    )
-
-    return res.choices[0].message.content.strip()
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        res = vision_model.generate_content([prompt, img])
+        return res.text.strip()
+    except Exception:
+        return "aku liat fotonya sih… tapi kepikiran hal lain 🙃"
 
 # ================== EVENTS ==================
 @bot.event
@@ -165,15 +132,11 @@ async def on_message(message):
     user_id = message.author.id
     update_mood()
 
-    # ===== IMAGE HANDLING =====
+    # ===== IMAGE =====
     if message.attachments:
         att = message.attachments[0]
         if att.content_type and att.content_type.startswith("image"):
             image_bytes = await att.read()
-
-            # validasi gambar
-            img = Image.open(io.BytesIO(image_bytes))
-            img.verify()
 
             async with message.channel.typing():
                 await asyncio.sleep(random.uniform(1.5, 3.0))
@@ -183,7 +146,7 @@ async def on_message(message):
             await message.reply(reply)
             return
 
-    # ===== TEXT CHAT =====
+    # ===== TEXT =====
     text = message.content.lower()
 
     if any(w in text for w in ["cantik", "sayang", "lucu", "imut", "cinta"]):
