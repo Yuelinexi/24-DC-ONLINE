@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-import os, asyncio, random, io
+import os, asyncio, random, io, binascii
 from dotenv import load_dotenv
 from PIL import Image
 from google import genai
@@ -188,7 +188,6 @@ async def gemini_image(prompt: str, image_bytes: bytes):
 # ================= EVENTS =================
 @bot.event
 async def on_ready():
-    # === CUSTOM STATUS ===
     activity = discord.CustomActivity(
         name="hmph, i'm not minor 🍥"
     )
@@ -240,8 +239,34 @@ async def on_message(message: discord.Message):
     if not clean:
         return
 
+    # ================= TAMBAHAN: BACA PESAN YANG DI-REPLY =================
+    if message.reference and message.reference.resolved:
+        ref = message.reference.resolved
+        if isinstance(ref, discord.Message) and ref.content:
+            clean = f"(Konteks sebelumnya): {ref.content}\n\nUser sekarang: {clean}"
+
     update_mood()
     uid = message.author.id
+
+    # ================= TAMBAHAN: FILE MODE (CTF / CODING) =================
+    if message.attachments:
+        att = message.attachments[0]
+        fname = att.filename.lower()
+        data = await att.read()
+
+        text_ext = (".txt", ".py", ".log", ".json", ".md", ".ini", ".cfg", ".yaml", ".yml")
+        bin_ext = (".bin", ".dat")
+
+        if fname.endswith(text_ext):
+            try:
+                content = data.decode("utf-8", errors="ignore")[:4000]
+            except:
+                content = "(file tidak bisa dibaca)"
+            clean = f"User mengirim file {fname} berisi:\n{content}\n\n{clean}"
+
+        elif fname.endswith(bin_ext):
+            hexview = binascii.hexlify(data[:256]).decode()
+            clean = f"User mengirim file binary {fname} (hex view):\n{hexview}\n\n{clean}"
 
     # ===== IMAGE MODE =====
     if message.attachments:
@@ -253,7 +278,7 @@ async def on_message(message: discord.Message):
                 await asyncio.sleep(random.uniform(1.2, 2.0))
             reply = await gemini_image(prompt, img_bytes)
             if reply:
-                await message.reply(reply)
+                await message.reply(reply[:1990])
             else:
                 await message.reply(TOKEN_HABIS_MESSAGE)
             return
@@ -277,7 +302,7 @@ async def on_message(message: discord.Message):
         await message.reply(TOKEN_HABIS_MESSAGE)
         return
 
-    await message.reply(reply)
+    await message.reply(reply[:1990])
 
 # =================================================
 # === SLASH COMMAND /status (NO GEMINI RESPONSE) ===
