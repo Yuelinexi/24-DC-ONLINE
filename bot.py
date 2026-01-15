@@ -117,7 +117,7 @@ Gunakan sapaan universal yang asik.
 
 ANTI RIBET & CLEAN CODE:
 Kalau user tanya coding/masalah teknis, langsung kasih solusi praktis.
-WAJIB gunakan format Markdown code blocks (contoh: '''python ,,, ''')
+WAJIB gunakan format Markdown code blocks (contoh: '''python ,,, ''') jelasin sebagai professional tapi asik
 
 RESPON GODAAN:
 Kalau user gombal, tanggapi dengan ketawa atau balasan lucu. kalau bisa gombalin balik
@@ -146,9 +146,7 @@ def get_user(uid):
 def build_prompt(username, uid, msg):
     aff = get_user(uid)["affection"]
     relation = "punya rasa ke user" if aff >= 30 else "teman ngobrol"
-
-    return f"""
-{STEM_INSTRUCTION}
+    return f"""{STEM_INSTRUCTION}
 
 Mood: {current_mood}
 Hubungan: {relation}
@@ -164,9 +162,7 @@ async def gemini_text(prompt: str):
             model=MODEL_TEXT,
             contents=prompt
         )
-        if not res or not res.text:
-            return None
-        return res.text.strip()
+        return res.text.strip() if res and res.text else None
     except Exception as e:
         print("Gemini TEXT error:", e)
         return None
@@ -178,55 +174,44 @@ async def gemini_image(prompt: str, image_bytes: bytes):
             model=MODEL_VISION,
             contents=[prompt, image]
         )
-        if not res or not res.text:
-            return None
-        return res.text.strip()
+        return res.text.strip() if res and res.text else None
     except Exception as e:
         print("Gemini IMAGE error:", e)
         return None
 
+# ================= ANTI POTONG DISCORD =================
+async def send_long_reply(message: discord.Message, text: str):
+    MAX = 1990
+    chunks = [text[i:i+MAX] for i in range(0, len(text), MAX)]
+    for i, chunk in enumerate(chunks):
+        if i == 0:
+            await message.reply(chunk)
+        else:
+            await message.channel.send(chunk)
+
 # ================= EVENTS =================
 @bot.event
 async def on_ready():
-    activity = discord.CustomActivity(
-        name="hmph, i'm not minor 🍥"
-    )
-    await bot.change_presence(
-        status=discord.Status.online,
-        activity=activity
-    )
-
+    activity = discord.CustomActivity(name="hmph, i'm not minor 🍥")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
     print(f"💗 {BOT_NAME} online sebagai {bot.user}")
-
-    try:
-        await bot.tree.sync()
-        print("✅ Slash command synced")
-    except Exception as e:
-        print("Slash sync error:", e)
+    await bot.tree.sync()
 
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-    if message.author.id == bot.user.id:
-        return
 
-    # ==================================================
-    # === AUTO REACT JIKA REPLY KE BOT + TRIGGER PHRASE ==
-    # ==================================================
+    # AUTO REACT
     if (
         message.reference
         and message.reference.resolved
         and message.reference.resolved.author.id == bot.user.id
         and "bukankah ini my.." in message.content.lower()
     ):
-        try:
-            await message.add_reaction("💕")
-        except:
-            pass
+        await message.add_reaction("💕")
         return
 
-    # === HANYA JAWAB JIKA DI MENTION ===
     if bot.user not in message.mentions:
         return
 
@@ -236,88 +221,49 @@ async def on_message(message: discord.Message):
         .replace(f"<@!{bot.user.id}>", "")
         .strip()
     )
-    if not clean:
-        return
 
-    # ================= TAMBAHAN: BACA PESAN YANG DI-REPLY =================
+    # KONTEKS REPLY
     if message.reference and message.reference.resolved:
         ref = message.reference.resolved
-        if isinstance(ref, discord.Message) and ref.content:
+        if ref.content:
             clean = f"(Konteks sebelumnya): {ref.content}\n\nUser sekarang: {clean}"
 
-    update_mood()
-    uid = message.author.id
-
-    # ================= TAMBAHAN: FILE MODE (CTF / CODING) =================
+    # FILE MODE
     if message.attachments:
         att = message.attachments[0]
-        fname = att.filename.lower()
         data = await att.read()
+        fname = att.filename.lower()
 
-        text_ext = (".txt", ".py", ".log", ".json", ".md", ".ini", ".cfg", ".yaml", ".yml")
-        bin_ext = (".bin", ".dat")
-
-        if fname.endswith(text_ext):
-            try:
-                content = data.decode("utf-8", errors="ignore")[:4000]
-            except:
-                content = "(file tidak bisa dibaca)"
-            clean = f"User mengirim file {fname} berisi:\n{content}\n\n{clean}"
-
-        elif fname.endswith(bin_ext):
+        if fname.endswith((".txt",".py",".log",".json",".md",".yaml",".yml",".cfg",".ini")):
+            content = data.decode("utf-8", errors="ignore")[:4000]
+            clean = f"Isi file {fname}:\n{content}\n\n{clean}"
+        elif fname.endswith((".bin",".dat")):
             hexview = binascii.hexlify(data[:256]).decode()
-            clean = f"User mengirim file binary {fname} (hex view):\n{hexview}\n\n{clean}"
+            clean = f"Binary {fname} (hex):\n{hexview}\n\n{clean}"
 
-    # ===== IMAGE MODE =====
-    if message.attachments:
-        att = message.attachments[0]
-        if att.content_type and att.content_type.startswith("image"):
-            img_bytes = await att.read()
-            prompt = "Shimi bereaksi ke gambar user secara natural dan manusiawi."
-            async with message.channel.typing():
-                await asyncio.sleep(random.uniform(1.2, 2.0))
-            reply = await gemini_image(prompt, img_bytes)
-            if reply:
-                await message.reply(reply[:1990])
-            else:
-                await message.reply(TOKEN_HABIS_MESSAGE)
-            return
-
-    # ===== TEXT MODE =====
-    lower = clean.lower()
-    if any(w in lower for w in ["cantik", "imut", "sayang", "lucu"]):
-        get_user(uid)["affection"] += 2
+    update_mood()
 
     async with message.channel.typing():
         await asyncio.sleep(random.uniform(1.0, 2.0))
 
-    prompt = build_prompt(
-        message.author.display_name,
-        uid,
-        clean
-    )
-
+    prompt = build_prompt(message.author.display_name, message.author.id, clean)
     reply = await gemini_text(prompt)
+
     if not reply:
         await message.reply(TOKEN_HABIS_MESSAGE)
         return
 
-    await message.reply(reply[:1990])
+    await send_long_reply(message, reply)
 
-# =================================================
-# === SLASH COMMAND /status (NO GEMINI RESPONSE) ===
-# =================================================
-@bot.tree.command(name="status", description="Cek status token Shimi")
+# ================= SLASH COMMAND =================
+@bot.tree.command(name="status")
 async def status(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
         _ = list(client.models.list())
         await interaction.followup.send("iya kenapa 🪭", ephemeral=True)
     except:
-        await interaction.followup.send(
-            "sabarr ya tokenku habiss 💕",
-            ephemeral=True
-        )
+        await interaction.followup.send("sabarr ya tokenku habiss 💕", ephemeral=True)
 
 # ================= RUN =================
 bot.run(DISCORD_TOKEN)
